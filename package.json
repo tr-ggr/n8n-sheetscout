@@ -1,0 +1,25 @@
+{
+  "name": "n8n-sheetscout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Resume Summarizer to Google Sheets - n8n workflow plus a small TypeScript harness",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "validate": "tsx src/validate-workflow.ts",
+    "fixture": "tsx scripts/make-fixture.ts",
+    "sync": "tsx scripts/sync-code-node.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "gen-1735689600-8Qv0ExAmPlEfIxTuRe",
+  "provider": "OpenAI",
+  "model": "openai/gpt-4o-mini",
+  "object": "chat.completion",
+  "created": 1735689600,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"candidate_name\":\"Jane Doe\",\"email\":\"jane.doe@example.com\",\"phone\":\"+1 555 0100\",\"current_title\":\"Senior Fullstack Engineer\",\"years_of_experience\":6,\"top_skills\":\"Node.js, React, PostgreSQL, TypeScript, AWS\",\"summary\":\"Proven fullstack engineer with six years of experience scaling Node.js microservices and React front ends. Led a payments platform migration that cut checkout latency by 40 percent.\"}",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 612,
+    "completion_tokens": 128,
+    "total_tokens": 740
+  }
+}
