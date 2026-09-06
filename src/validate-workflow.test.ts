@@ -147,12 +147,44 @@ describe('validateWorkflow', () => {
     );
   });
 
-  it('flags a missing settings.executionOrder', () => {
+  it('flags missing workflow settings', () => {
     const workflow = loadWorkflow();
     workflow.settings = {};
 
     expect(validateWorkflow(workflow)).toEqual([
       'workflow: settings.executionOrder must be "v1", found undefined',
+      'workflow: settings.saveManualExecutions must be true',
+    ]);
+  });
+
+  it('flags an HTTP node that stops the workflow on error', () => {
+    const workflow = loadWorkflow();
+    delete nodeNamed(workflow, 'OpenRouter: summarize').onError;
+
+    expect(validateWorkflow(workflow)).toEqual([
+      'node "OpenRouter: summarize": onError must be "continueRegularOutput" so a failed call still reaches the parser',
+    ]);
+  });
+
+  it('flags a missing form completion node', () => {
+    const workflow = loadWorkflow();
+    const nodes = workflow.nodes as Record<string, unknown>[];
+    workflow.nodes = nodes.filter((node) => node.name !== 'Confirm submission');
+    const connections = workflow.connections as Record<string, unknown>;
+    delete connections['Append to Candidates'];
+
+    expect(validateWorkflow(workflow)).toEqual([
+      'nodes: missing node "Confirm submission" (n8n-nodes-base.form)',
+      'connections: "Append to Candidates" must have exactly one main output leading to "Confirm submission"',
+    ]);
+  });
+
+  it('flags a completion message that is not wired to the parsed candidate name', () => {
+    const workflow = loadWorkflow();
+    parametersOf(workflow, 'Confirm submission').completionMessage = 'Thanks!';
+
+    expect(validateWorkflow(workflow)).toEqual([
+      'node "Confirm submission": completionMessage must be an expression starting with "={{"',
     ]);
   });
 });

@@ -130,3 +130,51 @@ Unless the stack above says otherwise, the default stack for this project is the
 - Keep secrets in `.env` (git-ignored); maintain an up-to-date `.env.example`.
 - Write a short `README.md` early: what the project is, how to run it.
 - Before finishing any task: typecheck (and tests, if present) must pass.
+
+---
+
+## Repo layout & commands
+
+```text
+n8n-sheetscout/
+├── CLAUDE.md                     # this file: blueprint + conventions
+├── README.md                     # how to run it, import it, troubleshoot it
+├── docker-compose.yml            # local n8n (n8nio/n8n:latest, ./n8n_data volume)
+├── .env.example                  # every env var the workflow reads (.env is git-ignored)
+├── docs/
+│   ├── architecture.md           # authoritative node-by-node design + sheet schema
+│   └── sprints/                  # the three build sprints
+├── src/
+│   ├── parse-llm-response.ts     # SHEET_COLUMNS, CandidateRow, parseLlmResponse (+ test)
+│   ├── code-node.ts              # extracts/strips the marked block into Code-node JS (+ test)
+│   └── validate-workflow.ts      # validateWorkflow() + `pnpm validate` CLI (+ test)
+├── scripts/
+│   ├── sync-code-node.ts         # writes the generated body into workflows/*.json
+│   └── make-fixture.ts           # regenerates fixtures/sample-resume.pdf with pdf-lib
+├── fixtures/                     # sample resume PDF + sample OpenRouter responses
+└── workflows/
+    └── resume-summarizer.json    # the importable n8n workflow (no credentials, no ids)
+```
+
+| Command | What it does |
+|---------|--------------|
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | `vitest run` |
+| `pnpm validate` | Structural checks on every `workflows/*.json`; exits 1 on problems |
+| `pnpm sync` | Regenerates the Code node's `jsCode` from `src/parse-llm-response.ts` |
+| `pnpm fixture` | Rewrites `fixtures/sample-resume.pdf` (deterministic; pinned PDF dates) |
+
+### The sync rule
+
+The Code node's `jsCode` inside `workflows/resume-summarizer.json` is **generated**, never
+hand-edited. It is the text between `// @n8n-code-start` and `// @n8n-code-end` in
+`src/parse-llm-response.ts`, with function-signature type annotations stripped and
+`return { json: parseLlmResponse($input.item.json) };` appended.
+
+- Keep that marked block plain JavaScript plus function-signature annotations; types, constants
+  and `export`s live outside the markers. `pnpm sync` throws if anything else TypeScript-only
+  survives.
+- After editing the parser: `pnpm sync`, then `pnpm test && pnpm validate`, then commit both
+  files. `pnpm validate` fails with "jsCode is stale" when the JSON drifts.
+- Never commit credentials, credential ids, API keys, or an n8n `instanceId`; the validator
+  rejects all three.

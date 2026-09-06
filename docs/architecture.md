@@ -14,6 +14,9 @@
         │
         ▼
 [Append to Candidates]  Google Sheets node, Append Row, Map Automatically
+        │
+        ▼
+[Confirm submission]  Form node (ending page) – "Resume received"
 ```
 
 ## Node-by-node configuration
@@ -25,8 +28,19 @@
 | 3 | `OpenRouter: summarize` | `n8n-nodes-base.httpRequest` 4.2 | `method: POST`, `url: https://openrouter.ai/api/v1/chat/completions`, `authentication: genericCredentialType`, `genericAuthType: httpHeaderAuth`, `sendBody: true`, `specifyBody: json`, `jsonBody` = expression below, `options.retryOnFail`/`maxTries: 3` at node level |
 | 4 | `Parse LLM response` | `n8n-nodes-base.code` 2 | `mode: runOnceForEachItem`, `jsCode` synced from `src/parse-llm-response.ts` |
 | 5 | `Append to Candidates` | `n8n-nodes-base.googleSheets` 4.5 | `operation: append`, `documentId: {mode: id, value: ={{ $env.GOOGLE_SHEET_ID }}}`, `sheetName: {mode: name, value: Candidates}`, `columns.mappingMode: autoMapInputData` |
+| 6 | `Confirm submission` | `n8n-nodes-base.form` 1 | `operation: completion`, `completionTitle: Resume received`, `completionMessage: ={{ $('Parse LLM response').item.json['Candidate Name'] }} was added to the sheet.`, `webhookId` at node level |
 
 Plus one Sticky Note node telling the importer which credentials to create.
+
+### Workflow settings and failure handling
+
+- `settings.executionOrder: v1`, `settings.saveManualExecutions: true` (so a failed manual run
+  keeps its data for inspection).
+- Node 3 retries: `retryOnFail: true`, `maxTries: 3`, `waitBetweenTries: 2000`.
+- Node 3 also sets `onError: continueRegularOutput`. After three failed tries the error body
+  still flows into node 4, which turns it into a `PARSE_ERROR: …` row. The failure lands in the
+  spreadsheet instead of disappearing into the execution log, and the person who submitted the
+  form still gets an ending page.
 
 ### Why the file lands in `resume`, not `data`
 
@@ -65,6 +79,11 @@ wrapped in a ```json fence). Output: exactly one item whose keys equal the sheet
 | `Years Exp` | `years_of_experience` (number or numeric string → number) | `N/A` |
 | `Top Skills` | `top_skills` (array → comma-joined string) | `N/A` |
 | `Executive Summary` | `summary` | `N/A`, or `PARSE_ERROR: <first 200 chars>` when the content is not JSON |
+
+When the response carries no `choices[0].message.content` at all — an OpenRouter error body such
+as `{ "error": { "message": "Insufficient credits", "code": 402 } }`, which is what node 3
+forwards once `onError: continueRegularOutput` is set — the summary becomes
+`PARSE_ERROR: <that error message>`.
 
 The parse step must never throw; a bad LLM answer still produces a row so the failure is
 visible in the sheet.

@@ -1,0 +1,26 @@
+{
+  "id": "gen-1735689900-3Kw9BaDfIxTuReX",
+  "provider": "OpenAI",
+  "model": "openai/gpt-4o-mini",
+  "object": "chat.completion",
+  "created": 1735689900,
+  "choices": [
+    {
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I'm sorry, but the document you provided does not appear to contain a resume. Please upload a PDF that includes the candidate's contact details and work history.",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 88,
+    "completion_tokens": 31,
+    "total_tokens": 119
+  }
+}

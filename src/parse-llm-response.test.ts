@@ -123,6 +123,34 @@ describe('parseLlmResponse', () => {
     expect(String(summary)).toBe('PARSE_ERROR: ' + 'x'.repeat(200));
   });
 
+  it('turns the bad sample response into a visible PARSE_ERROR row', () => {
+    const row = parseLlmResponse(readFixture('sample-openrouter-response-bad.json'));
+
+    expect(String(row['Executive Summary'])).toMatch(/^PARSE_ERROR: /);
+    expect(String(row['Executive Summary'])).toContain('does not appear to contain a resume');
+    expect(row['Candidate Name']).toBe('N/A');
+    expect(Object.keys(row).sort()).toEqual([...SHEET_COLUMNS].sort());
+  });
+
+  it('surfaces an OpenRouter error body instead of throwing', () => {
+    // With onError: continueRegularOutput on the HTTP node, a failed call
+    // arrives here as the API's error payload rather than an exception.
+    const row = parseLlmResponse({
+      error: { message: 'Insufficient credits to run this request', code: 402 },
+    });
+
+    expect(row['Executive Summary']).toBe(
+      'PARSE_ERROR: Insufficient credits to run this request',
+    );
+    expect(row.Email).toBe('N/A');
+  });
+
+  it('surfaces an n8n-style error item body', () => {
+    const row = parseLlmResponse({ error: 'connect ETIMEDOUT 104.18.0.1:443' });
+
+    expect(row['Executive Summary']).toBe('PARSE_ERROR: connect ETIMEDOUT 104.18.0.1:443');
+  });
+
   it('never throws on an empty or undefined response', () => {
     for (const input of [undefined, null, {}, { choices: [] }, 'nonsense', 42]) {
       const row = parseLlmResponse(input);

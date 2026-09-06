@@ -27,6 +27,7 @@ export const EXPECTED_CHAIN: readonly ExpectedNode[] = [
   { name: 'OpenRouter: summarize', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2 },
   { name: 'Parse LLM response', type: 'n8n-nodes-base.code', typeVersion: 2 },
   { name: 'Append to Candidates', type: 'n8n-nodes-base.googleSheets', typeVersion: 4.5 },
+  { name: 'Confirm submission', type: 'n8n-nodes-base.form', typeVersion: 1 },
 ];
 
 const STICKY_NOTE_TYPE = 'n8n-nodes-base.stickyNote';
@@ -78,8 +79,15 @@ function checkTopLevel(workflow: Record<string, unknown>, problems: string[]): v
   const settings = asRecord(workflow.settings);
   if (settings === undefined) {
     problems.push('workflow: "settings" must be an object');
-  } else if (settings.executionOrder !== 'v1') {
-    problems.push(`workflow: settings.executionOrder must be "v1", found ${show(settings.executionOrder)}`);
+  } else {
+    if (settings.executionOrder !== 'v1') {
+      problems.push(
+        `workflow: settings.executionOrder must be "v1", found ${show(settings.executionOrder)}`,
+      );
+    }
+    if (settings.saveManualExecutions !== true) {
+      problems.push('workflow: settings.saveManualExecutions must be true');
+    }
   }
   for (const key of ['id', 'versionId', 'meta']) {
     if (key in workflow) {
@@ -287,6 +295,37 @@ function checkHttpRequest(byName: Map<string, Record<string, unknown>>, problems
   if (node.maxTries !== 3) {
     problems.push(`node "OpenRouter: summarize": maxTries must be 3, found ${show(node.maxTries)}`);
   }
+  if (node.onError !== 'continueRegularOutput') {
+    problems.push(
+      'node "OpenRouter: summarize": onError must be "continueRegularOutput" so a failed call still reaches the parser',
+    );
+  }
+}
+
+/** Form ending node: confirms the upload with the parsed candidate name. */
+function checkCompletionNode(byName: Map<string, Record<string, unknown>>, problems: string[]): void {
+  const node = byName.get('Confirm submission');
+  if (node === undefined) {
+    return;
+  }
+  const parameters = childRecord(node, 'parameters');
+
+  if (childString(parameters, 'operation') !== 'completion') {
+    problems.push(
+      `node "Confirm submission": operation must be "completion", found ${show(parameters?.operation)}`,
+    );
+  }
+  if (childString(parameters, 'completionTitle') !== 'Resume received') {
+    problems.push('node "Confirm submission": completionTitle must be "Resume received"');
+  }
+  const message = childString(parameters, 'completionMessage');
+  if (message === undefined || !message.startsWith('={{')) {
+    problems.push('node "Confirm submission": completionMessage must be an expression starting with "={{"');
+  } else if (!message.includes("$('Parse LLM response')") || !message.includes('Candidate Name')) {
+    problems.push(
+      'node "Confirm submission": completionMessage must read Candidate Name from the "Parse LLM response" node',
+    );
+  }
 }
 
 /** Code node: correct mode, and `jsCode` exactly what `pnpm sync` generates. */
@@ -367,6 +406,7 @@ export function validateWorkflow(json: unknown): string[] {
   checkHttpRequest(byName, problems);
   checkCodeNode(byName, problems);
   checkSheetsNode(byName, problems);
+  checkCompletionNode(byName, problems);
   checkNoSecrets(workflow, problems);
 
   return problems;
