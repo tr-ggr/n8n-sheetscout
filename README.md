@@ -57,7 +57,37 @@ n8n's data (workflows, credentials, encryption key) lives in `./n8n_data`, which
 
 ## Import the workflow
 
-_Added in sprint 02, once `workflows/resume-summarizer.json` exists._
+1. **Import.** In n8n: **Workflows → ⋯ → Import from File…** and pick
+   `workflows/resume-summarizer.json`.
+2. **Create the OpenRouter credential.** **Credentials → New → Header Auth**, name it
+   `OpenRouter`, set **Name** to `Authorization` and **Value** to `Bearer <your key>`.
+   Open the **OpenRouter: summarize** node and select it.
+3. **Create the Google Sheets credential.** **Credentials → New → Google Sheets OAuth2 API**,
+   paste a Google Cloud OAuth client id/secret (the callback URL is shown in the dialog), and
+   complete the consent flow. Open the **Append to Candidates** node and select it.
+4. **Set the env vars.** Fill `GOOGLE_SHEET_ID`, `GOOGLE_SHEET_TAB` and `OPENROUTER_MODEL` in
+   `.env`, then `docker compose up -d --force-recreate` so n8n picks them up. The workflow reads
+   them through `$env`, which needs `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` (already in
+   `.env.example`).
+5. **Activate** the workflow, then open the **On form submission** node and copy the
+   **Production URL** (the test URL only listens for one execution).
+6. **Try it.** Open the form URL, upload `fixtures/sample-resume.pdf`, and check that a row for
+   Jane Doe appears in the `Candidates` tab.
+
+The imported JSON deliberately contains no credential ids, so step 2 and 3 are always required.
+
+### Changing the parser
+
+`src/parse-llm-response.ts` is the source of truth for the Code node. After editing it:
+
+```bash
+pnpm sync        # rewrites the Code node's jsCode in workflows/*.json
+pnpm test        # unit tests for the parser
+pnpm validate    # fails if the JSON drifted from the parser
+```
+
+Then re-import the workflow into n8n (or paste the new body into the Code node). Never edit
+`jsCode` inside the JSON by hand — `pnpm validate` will reject it.
 
 ## Commands
 

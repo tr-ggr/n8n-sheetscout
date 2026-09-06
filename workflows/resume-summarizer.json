@@ -1,0 +1,181 @@
+{
+  "name": "Resume Summarizer to Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Before you run this\n\n**Credentials to create in n8n (never stored in this file):**\n\n1. `OpenRouter` - type *Header Auth*. Name: `Authorization`,\n   Value: `Bearer <your OPENROUTER_API_KEY>`.\n   Select it on the **OpenRouter: summarize** node.\n2. `Google Sheets` - type *Google Sheets OAuth2 API*.\n   Select it on the **Append to Candidates** node.\n\n**Environment variables (see `.env.example`):**\n\n- `OPENROUTER_MODEL` (default `openai/gpt-4o-mini`)\n- `GOOGLE_SHEET_ID` - the spreadsheet id\n- `GOOGLE_SHEET_TAB` (default `Candidates`)\n- `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` so `$env` works in expressions\n\nThe `Candidates` tab needs this header row:\nCandidate Name | Email | Phone | Current Title | Years Exp | Top Skills | Executive Summary",
+        "height": 460,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -520
+      ],
+      "id": "0f1c8f2a-5f6b-4c1e-9a3d-1b2c3d4e5f60",
+      "name": "Setup notes"
+    },
+    {
+      "parameters": {
+        "formTitle": "Upload a resume",
+        "formDescription": "Upload a PDF resume. It is summarised by an LLM and appended to the Candidates sheet.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "resume",
+              "fieldType": "file",
+              "acceptFileTypes": ".pdf",
+              "multipleFiles": false,
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "On form submission",
+      "webhookId": "7d3f0c6e-9b1a-4c8d-8f2e-5a6b7c8d9e0f"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "resume",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "id": "2b3c4d5e-6f70-4b8c-9d0e-1f2a3b4c5d6e",
+      "name": "Extract from PDF"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $env.OPENROUTER_MODEL || \"openai/gpt-4o-mini\",\n  response_format: { type: \"json_object\" },\n  messages: [\n    { role: \"system\", content: \"You are an HR parsing assistant. Extract candidate information from the resume text into valid JSON with these exact keys: candidate_name, email, phone, current_title, years_of_experience, top_skills (comma-separated string), summary (2-sentence executive summary).\" },\n    { role: \"user\", content: \"Resume Text:\\n\" + $json.text }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "3c4d5e6f-7081-4c9d-8e0f-2a3b4c5d6e7f",
+      "name": "OpenRouter: summarize",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/** Placeholder written whenever a field is missing or unusable. */\nconst NOT_AVAILABLE = 'N/A';\n\n/** How much of the offending payload to echo into a PARSE_ERROR row. */\nconst PREVIEW_LENGTH = 200;\n\n/** Reads a property off a value that may not be an object at all. */\nfunction readField(source, key) {\n  if (source === null || typeof source !== 'object') {\n    return undefined;\n  }\n  return Reflect.get(source, key);\n}\n\n/** `JSON.parse` that reports failure as `undefined` instead of throwing. */\nfunction tryParseJson(text) {\n  try {\n    return JSON.parse(text);\n  } catch {\n    return undefined;\n  }\n}\n\n/** True for a plain (non-array) object. */\nfunction isRecord(value) {\n  return value !== null && typeof value === 'object' && !Array.isArray(value);\n}\n\n/** Best-effort string form of anything, for error previews. */\nfunction safeStringify(value) {\n  if (typeof value === 'string') {\n    return value;\n  }\n  try {\n    const json = JSON.stringify(value);\n    return typeof json === 'string' ? json : String(value);\n  } catch {\n    return String(value);\n  }\n}\n\n/** First `PREVIEW_LENGTH` characters, whitespace-normalised. */\nfunction preview(value) {\n  return safeStringify(value).replace(/\\s+/g, ' ').trim().slice(0, PREVIEW_LENGTH);\n}\n\n/** Removes a surrounding ```json ... ``` fence, if the model added one. */\nfunction stripCodeFence(raw) {\n  let text = raw.trim();\n  if (text.slice(0, 3) !== '```') {\n    return text;\n  }\n  text = text.replace(/^```[a-zA-Z0-9_-]*[ \\t]*\\r?\\n?/, '');\n  const closing = text.lastIndexOf('```');\n  if (closing !== -1) {\n    text = text.slice(0, closing);\n  }\n  return text.trim();\n}\n\n/** Digs `choices[0].message.content` out of an OpenRouter chat completion. */\nfunction readContent(response) {\n  const choices = readField(response, 'choices');\n  if (!Array.isArray(choices) || choices.length === 0) {\n    return undefined;\n  }\n  const message = readField(choices[0], 'message');\n  return readField(message, 'content');\n}\n\n/** Explains why there was no usable content (API error body, empty response, ...). */\nfunction describeMissingContent(response) {\n  const errorField = readField(response, 'error');\n  const errorMessage = readField(errorField, 'message');\n  if (typeof errorMessage === 'string' && errorMessage.trim() !== '') {\n    return preview(errorMessage);\n  }\n  if (typeof errorField === 'string' && errorField.trim() !== '') {\n    return preview(errorField);\n  }\n  if (errorField !== undefined) {\n    return preview(errorField);\n  }\n  if (response === undefined || response === null) {\n    return 'empty response from OpenRouter';\n  }\n  return 'no message content in OpenRouter response: ' + preview(response);\n}\n\n/** Normalises a field to a non-empty string; arrays are comma-joined. */\nfunction toText(value) {\n  if (typeof value === 'string') {\n    return value.trim() === '' ? NOT_AVAILABLE : value.trim();\n  }\n  if (typeof value === 'number' && isFinite(value)) {\n    return String(value);\n  }\n  if (typeof value === 'boolean') {\n    return String(value);\n  }\n  if (Array.isArray(value)) {\n    const parts = [];\n    for (const entry of value) {\n      const text = toText(entry);\n      if (text !== NOT_AVAILABLE) {\n        parts.push(text);\n      }\n    }\n    return parts.length === 0 ? NOT_AVAILABLE : parts.join(', ');\n  }\n  return NOT_AVAILABLE;\n}\n\n/** Years of experience as a number when numeric, otherwise `N/A`. */\nfunction toYears(value) {\n  if (typeof value === 'number' && isFinite(value)) {\n    return value;\n  }\n  if (typeof value === 'string' && value.trim() !== '' && isFinite(Number(value))) {\n    return Number(value.trim());\n  }\n  return NOT_AVAILABLE;\n}\n\n/** A row with every sheet column present and set to `N/A`. */\nfunction blankRow() {\n  return {\n    'Candidate Name': NOT_AVAILABLE,\n    Email: NOT_AVAILABLE,\n    Phone: NOT_AVAILABLE,\n    'Current Title': NOT_AVAILABLE,\n    'Years Exp': NOT_AVAILABLE,\n    'Top Skills': NOT_AVAILABLE,\n    'Executive Summary': NOT_AVAILABLE,\n  };\n}\n\n/**\n * Turns an OpenRouter chat completion into exactly one sheet row.\n * Never throws: an unusable answer still produces a row whose\n * `Executive Summary` starts with `PARSE_ERROR:`, so the failure is visible\n * in the spreadsheet instead of vanishing.\n */\nfunction parseLlmResponse(response) {\n  const row = blankRow();\n\n  const content = readContent(response);\n  if (typeof content !== 'string' || content.trim() === '') {\n    row['Executive Summary'] = 'PARSE_ERROR: ' + describeMissingContent(response);\n    return row;\n  }\n\n  const parsed = tryParseJson(stripCodeFence(content));\n  if (!isRecord(parsed)) {\n    row['Executive Summary'] = 'PARSE_ERROR: ' + preview(content);\n    return row;\n  }\n\n  row['Candidate Name'] = toText(readField(parsed, 'candidate_name'));\n  row.Email = toText(readField(parsed, 'email'));\n  row.Phone = toText(readField(parsed, 'phone'));\n  row['Current Title'] = toText(readField(parsed, 'current_title'));\n  row['Years Exp'] = toYears(readField(parsed, 'years_of_experience'));\n  row['Top Skills'] = toText(readField(parsed, 'top_skills'));\n  row['Executive Summary'] = toText(readField(parsed, 'summary'));\n\n  return row;\n}\n\nreturn { json: parseLlmResponse($input.item.json) };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "4d5e6f70-8192-4d0e-9f10-3b4c5d6e7f80",
+      "name": "Parse LLM response"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $env.GOOGLE_SHEET_TAB || 'Candidates' }}"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        0
+      ],
+      "id": "5e6f7081-92a3-4e1f-8021-4c5d6e7f8091",
+      "name": "Append to Candidates"
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Extract from PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from PDF": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter: summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter: summarize": {
+      "main": [
+        [
+          {
+            "node": "Parse LLM response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LLM response": {
+      "main": [
+        [
+          {
+            "node": "Append to Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
