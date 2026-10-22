@@ -22,7 +22,7 @@ See `docs/architecture.md` for the design and `docs/sprints/` for the build plan
 | `docs/architecture.md` | Authoritative node-by-node design and the sheet schema |
 | `src/parse-llm-response.ts` | The pure parsing function; its body is the workflow's Code node |
 | `src/validate-workflow.ts` | Structural validator for the workflow JSON (`pnpm validate`) |
-| `scripts/sync-code-node.ts` | Copies the parser into the workflow JSON (`pnpm sync`) |
+| `scripts/sync-code-node.ts` | Copies the parser and applies `SETUP_INFO` to the workflow JSON (`pnpm sync`) |
 | `scripts/make-fixture.ts` | Regenerates `fixtures/sample-resume.pdf` (`pnpm fixture`) |
 | `fixtures/` | Sample resume PDF and sample OpenRouter responses used by tests |
 | `workflows/` | The exported n8n workflow JSON (added in sprint 02) |
@@ -39,6 +39,7 @@ See `docs/architecture.md` for the design and `docs/sprints/` for the build plan
 ```bash
 cp .env.example .env      # then fill in OPENROUTER_API_KEY and GOOGLE_SHEET_ID
 pnpm install
+pnpm sync        # reads .env; SETUP_INFO=false omits the canvas-only setup note
 pnpm test
 ```
 
@@ -81,6 +82,8 @@ n8n's data (workflows, credentials, encryption key) lives in `./n8n_data`, which
    `Candidates` tab.
 
 The imported JSON deliberately contains no credential ids, so step 2 and 3 are always required.
+Those credential and environment steps remain required even when `SETUP_INFO=false` removes the
+informational Sticky Note from the workflow canvas.
 
 ### Changing the parser
 
@@ -102,7 +105,7 @@ Then re-import the workflow into n8n (or paste the new body into the Code node).
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm test` | vitest, run once |
 | `pnpm validate` | Structural checks on `workflows/*.json` |
-| `pnpm sync` | Regenerates the Code node body from `src/parse-llm-response.ts` |
+| `pnpm sync` | Regenerates the Code node and conditionally includes the Setup notes Sticky Note |
 | `pnpm fixture` | Rewrites `fixtures/sample-resume.pdf` |
 
 ## Troubleshooting
@@ -138,6 +141,9 @@ by one to two orders of magnitude.
 ## Notes
 
 - Never commit `.env`, credential ids, or an n8n `instanceId`. Only `.env.example` is tracked.
+- `SETUP_INFO=false` (and a missing value) omits the visual Setup notes Sticky Note; `true`
+  restores exactly one. Invalid values fail generation. This does not configure credentials or
+  environment access—the import steps above are still authoritative.
 - `fixtures/sample-resume.pdf` is generated and committed. `pnpm fixture` pins the PDF metadata
   dates so regenerating it is byte-identical; if a future pdf-lib version reintroduces
   nondeterminism, a changed PDF with identical text is harmless.

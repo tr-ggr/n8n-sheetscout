@@ -6,10 +6,11 @@
  * nothing and prints "already in sync". `pnpm validate` fails when a workflow
  * JSON has drifted from the parser source, so the two always agree in CI.
  */
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { WORKFLOWS_DIR, buildCodeNodeJs } from '../src/code-node.js';
+import { applySetupInfo, parseSetupInfo } from '../src/setup-info.js';
 
 const CODE_NODE_TYPE = 'n8n-nodes-base.code';
 
@@ -33,7 +34,7 @@ function workflowPaths(): string[] {
 }
 
 /** Rewrites one workflow file in place; returns true when it changed. */
-function syncFile(path: string, jsCode: string): boolean {
+function syncFile(path: string, jsCode: string, setupInfo: boolean): boolean {
   const original = readFileSync(path, 'utf8');
   const workflow: WorkflowFile = JSON.parse(original);
 
@@ -55,6 +56,8 @@ function syncFile(path: string, jsCode: string): boolean {
     node.parameters.jsCode = jsCode;
   }
 
+  applySetupInfo(workflow, setupInfo);
+
   const updated = JSON.stringify(workflow, null, 2) + '\n';
   if (updated === original) {
     return false;
@@ -64,6 +67,9 @@ function syncFile(path: string, jsCode: string): boolean {
 }
 
 function main(): void {
+  const envPath = join(WORKFLOWS_DIR, '..', '.env');
+  if (existsSync(envPath)) process.loadEnvFile(envPath);
+  const setupInfo = parseSetupInfo(process.env.SETUP_INFO);
   const paths = workflowPaths();
   if (paths.length === 0) {
     console.log('sync: no workflow JSON in workflows/ - nothing to sync.');
@@ -73,7 +79,7 @@ function main(): void {
   const jsCode = buildCodeNodeJs();
   let changed = 0;
   for (const path of paths) {
-    if (syncFile(path, jsCode)) {
+    if (syncFile(path, jsCode, setupInfo)) {
       changed += 1;
       console.log(`sync: updated ${path}`);
     }
@@ -81,7 +87,7 @@ function main(): void {
   console.log(
     changed === 0
       ? `sync: already in sync (${paths.length} workflow${paths.length === 1 ? '' : 's'}).`
-      : `sync: rewrote ${changed} workflow file(s).`,
+      : `sync: rewrote ${changed} workflow file(s) (SETUP_INFO=${String(setupInfo)}).`,
   );
 }
 
